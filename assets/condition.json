@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "id": "C-001",
+  "statement": "",
+  "scope": "",
+  "target_ids": [],
+  "revision": 1,
+  "state": "unknown",
+  "evidence": [],
+  "history": [
+    {"revision": 1, "at": "", "state": "unknown", "reason": "", "evidence": []}
+  ]
+}

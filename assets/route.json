@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "id": "R-001",
+  "status": "planned",
+  "question": "",
+  "hypothesis": "",
+  "target_ids": [],
+  "depends_on": [],
+  "condition_ids": [],
+  "condition_reviews": [],
+  "prerequisites": [],
+  "experiment": {"action": "", "expected": "", "falsifier": ""},
+  "budget": {"limit": "", "stop_when": ""},
+  "evidence": [],
+  "state_reason": "",
+  "resume_when": "",
+  "closure": null,
+  "history": [
+    {"at": "", "from": null, "to": "planned", "reason": "", "evidence": []}
+  ]
+}

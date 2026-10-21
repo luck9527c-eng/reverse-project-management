@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "RUN-unique",
+  "route_id": "R-001",
+  "status": "planned",
+  "started_at": null,
+  "ended_at": null,
+  "target": {"id": "T-001", "sha256": ""},
+  "command": "",
+  "cwd": ".",
+  "tools": [],
+  "environment": {"snapshot": "", "differences": []},
+  "provenance": {"kind": "acquisition", "source_runs": [], "note": ""},
+  "state": {
+    "initial": "",
+    "expected_effects": "",
+    "restore_plan": "",
+    "status": "not_started",
+    "observed_effects": "",
+    "verification": "",
+    "recovery": null
+  },
+  "scripts": [],
+  "artifacts": [],
+  "exit_code": null,
+  "accepted_exit_codes": [0],
+  "observation": {"trigger": "", "window": "", "coverage": "", "control": ""},
+  "result": "",
+  "limitations": ""
+}
