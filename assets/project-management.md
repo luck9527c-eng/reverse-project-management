@@ -14,6 +14,7 @@
 | 目标身份 | `re/targets.json` |
 | 项目验收、阶段审计与证据争议 | `re/project.json` |
 | 环境快照 | `re/env/` |
+| 目标与执行封存基线 | `re/seals/targets/`、`re/seals/runs/` |
 | 路线记录 | `re/routes/` |
 | 共享前提与阻塞条件 | `re/conditions/` |
 | 专题文档 | `re/docs/` |
@@ -29,6 +30,8 @@
 - 关键新发现或工具/前提变化时读 [跨路线复查规则](../../.agents/skills/reverse-project-management/references/cross-route-review.md)，更新共享条件版本，自动检查关联路线和下游依赖。旧结论保留范围，复查与重验按优先级和预算安排，并在 INDEX 保留待办。
 - 定义验收、阶段结束、交接、声明完成或处理矛盾证据时读 [验收与审计规则](../../.agents/skills/reverse-project-management/references/acceptance-audits.md)。审计全部历史路线的遗漏关联，保留有争议结论和相反证据；同源导出不计作独立验证。
 - 实验开始前登记初始状态、副作用与恢复方案；接手中断实验时先核查会话/目标实际状态，保存部分输出并评估恢复。操作见运行记录规则，不能直接重跑或冒记恢复完成。
+- 运行结束后核对真实采集身份、环境快照哈希与产物，执行 seal，再引用为结论/验收依据；封存基线随项目进入经审阅的 Git。已封存执行事实使用新记录更正，恢复评估在 state 中追加。
+- 验收覆盖 target_ids 中的每个目标并分别满足独立采集数量。open 争议影响沿来源、共享条件和路线依赖传播：活动路线先阻塞/暂停，受影响验收恢复 pending，critical=false 不能豁免。
 - 检查或补齐工具时读 [环境规则](../../.agents/skills/reverse-project-management/references/environment.md)。区分发现、启动、会话可调用和目标适配。
 - 成熟工具覆盖的工作优先使用 REA MCP、HyperDBG、Frida 等现有能力；缺连接先修环境，不以手写解析器代替已有能力。
 - 产生证据或改变路线后更新对应记录和 INDEX。交接前刷新导航并校验，保留真实失败和未知项。
@@ -44,6 +47,7 @@
 默认布局使用仓库内的辅助脚本：
 
 ```text
+python .agents/skills/reverse-project-management/scripts/project.py seal . <RUN-id>
 python .agents/skills/reverse-project-management/scripts/project.py index .
 python .agents/skills/reverse-project-management/scripts/project.py impact .
 python .agents/skills/reverse-project-management/scripts/project.py audit-scope .
@@ -51,5 +55,7 @@ python .agents/skills/reverse-project-management/scripts/project.py check . --ha
 ```
 
 项目完成前另加 `--complete`；普通结构校验通过不代表项目验收完成。项目记录维护本仓库的验收范围、证据与交付物，INDEX 汇总待办。
+
+seal 在每次运行事实补齐后执行一次；index、impact 和 check 可重复执行。遇到已有封存不重写；更正工作按证据规则保留原运行与新运行的关联。
 
 目录或工作流变化时，更新本配置、agent 入口和 INDEX；同时适配依赖这些路径的脚本。日常推进路线不需要重新初始化。

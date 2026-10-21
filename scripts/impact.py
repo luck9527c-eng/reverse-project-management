@@ -70,4 +70,56 @@ def impact_report(conditions, routes):
 
 
 def report_for_project(root):
-    return impact_report(*read_records(root))
+    conditions, routes = read_records(root)
+    report = impact_report(conditions, routes)
+    path = root / "re/project.json"
+    project = json.loads(path.read_text(encoding="utf-8-sig")) if path.is_file() else {}
+    runs = {path.parent.name: json.loads(path.read_text(encoding="utf-8-sig"))
+            for path in (root / "re/runs").glob("*/run.json")}
+    report["dispute_impacts"] = dispute_impacts(project, routes, conditions, runs)
+    return report
+
+
+def evidence_lineage(values, runs):
+    pending, sources = list(values), set()
+    while pending:
+        key = pending.pop()
+        if ("run", key) in sources:
+            continue
+        sources.add(("run", key))
+        provenance = runs.get(key, {}).get("provenance") or {}
+        if provenance.get("capture_id"):
+            sources.add(("capture", provenance["capture_id"]))
+        sources.update(("raw", path) for path in provenance.get("raw_artifacts", []))
+        pending.extend(provenance.get("source_runs", []))
+    return sources
+
+
+def dispute_impacts(project, routes, conditions=None, runs=None):
+    """Open disputes affect current usability without erasing historical status."""
+    result = []
+    conditions, runs = conditions or {}, runs or {}
+    for dispute in project.get("disputes", []):
+        if dispute.get("status") != "open":
+            continue
+        direct = set(dispute.get("route_ids", []))
+        evidence = evidence_lineage(dispute.get("supporting", []) + dispute.get("contradicting", []), runs)
+        condition_ids = {key for key, condition in conditions.items()
+                         if evidence.intersection(evidence_lineage(condition.get("evidence", []), runs))}
+        direct.update(key for key, route in routes.items()
+                      if evidence.intersection(evidence_lineage(route.get("evidence", []), runs))
+                      or condition_ids.intersection(route.get("condition_ids", [])))
+        pending = deque((key, [key]) for key in sorted(direct))
+        seen = set()
+        while pending:
+            key, via = pending.popleft()
+            if key in seen or key not in routes:
+                continue
+            seen.add(key)
+            result.append({"dispute_id": dispute.get("id"), "route_id": key,
+                           "route_status": routes[key].get("status"), "via": via,
+                           "relation": "direct" if key in direct else "downstream"})
+            for child, route in sorted(routes.items()):
+                if key in route.get("depends_on", []):
+                    pending.append((child, via + [child]))
+    return result

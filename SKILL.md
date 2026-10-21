@@ -49,7 +49,7 @@ description: 适用于建立或接管逆向项目的工程管理、维护 INDEX 
 ## 每轮工作
 
 1. **先定义判定。** 建立或更新 `R-xxx`：问题、假设、目标、依赖、最小实验、预期观察、反证条件、预算。关键前提、阻塞点和解除条件用共享 `C-xxx` 记录并关联路线。检查相同目标与前提下的既有失败，写清本次有什么变化。
-2. **再建立运行目录。** 使用唯一 `RUN-...` ID；运行前保存计划、命令、初始状态、预期副作用与恢复方案，结束后补齐执行事实、来源链、原始输出及状态核查。失败、超时、空结果和中断同样保留；具体字段见 [运行记录](references/evidence-routes.md#每次运行的记录)。
+2. **再建立运行目录。** 使用唯一 `RUN-...` ID；运行前保存计划、命令、初始状态、预期副作用与恢复方案，结束后补齐执行事实、采集事件、来源链、原始输出与环境快照哈希，核对原始来源后执行 `seal` 封存，再用于结论或验收。失败、超时、空结果和中断同样保留；具体字段见 [运行记录](references/evidence-routes.md#每次运行的记录)。
 3. **依证据更新并复查影响。** 区分观察事实、推断、假设和未知；引用 `run.json` 及文件内定位。关键新证据或工具/前提变化时，按 [跨路线复查](references/cross-route-review.md) 更新条件版本，自动检查直接关联路线及下游依赖，记录范围判断或最小重验计划。只在 [状态门槛](references/evidence-routes.md#路线状态) 满足时变更路线，保留历史与相反证据。
 4. **同步入口并交接。** 更新 INDEX 的已知事实摘要、当前路线、阻塞和下一步。阶段结束或交接时按 [验收与审计](references/acceptance-audits.md) 检查全部历史路线的遗漏关联；矛盾证据登记争议，同源产物不算独立验证。用 `index` 和 `check` 检查导航与待办。声明项目完成前另执行 `check --hashes --complete` 并人工核对验收证据；未闭合项如实交接。
 
@@ -68,6 +68,7 @@ description: 适用于建立或接管逆向项目的工程管理、维护 INDEX 
 ```text
 python <skill-dir>/scripts/project.py init <project-root>
 python <skill-dir>/scripts/project.py probe --output <project-root>/re/env/ENV-unique.json
+python <skill-dir>/scripts/project.py seal <project-root> <RUN-id>
 python <skill-dir>/scripts/project.py impact <project-root>
 python <skill-dir>/scripts/project.py audit-scope <project-root>
 python <skill-dir>/scripts/project.py index <project-root>
@@ -78,10 +79,11 @@ python <skill-dir>/scripts/project.py check <project-root> --hashes --complete
 
 - `init` 建立项目配置、管理目录和仓库内 skill 副本，遇到已有配置、INDEX、`re/` 或同名项目 skill 时拒绝写入。已有项目先盘点，再手动按模板适配；复用已存在的配置与项目副本。
 - `probe` 只发现主机、PATH 和常见 MCP 配置文件的位置，不安装、不执行发现的工具、不证明可用性；输出文件必须是新文件。
-- `impact` 依据共享条件版本与路线依赖输出待复查/重验清单，不改写路线结论。
+- `seal` 对已结束运行执行哈希与记录预检，保存目标身份和执行记录的独立基线；拒绝覆盖已有封存。基线随项目进入经审阅的 Git，更正使用新记录，详见 [保全规则](references/evidence-routes.md#执行封存与更正)。
+- `impact` 输出条件复查与未解决争议的影响队列，沿证据来源、共享条件和路线依赖传播；受争议影响的活动路线先阻塞或暂停，保留历史结论。
 - `audit-scope` 只读输出阶段审计范围指纹；agent 实际检查所有历史路线后，将指纹与逐路线判断追加到项目记录。
 - `index` 只替换 INDEX 中的导航标记区，更新材料导航和待复查队列，保留手写目标、决策和交接。
-- `check` 检查引用、版本、复查、依赖、证死、验收证据、来源链和恢复记录，并返回未闭合项数量；`--hashes` 核验目标、脚本、产物和交付物；`--complete` 要求验收及完成门槛闭合。结构或完成检查均不能替代对实验有效性、证据独立性和结论逻辑的判断。
+- `check` 检查引用、封存、复查、依赖、证死、逐目标验收、采集去重和恢复记录，并返回未闭合项数量；`--hashes` 核验目标、环境快照、脚本、产物和交付物；`--complete` 要求验收及完成门槛闭合。检查不能替代对实验有效性、证据独立性和结论逻辑的判断。
 
 ## 按需材料
 

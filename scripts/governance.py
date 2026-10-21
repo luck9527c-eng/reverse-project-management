@@ -5,7 +5,9 @@ These checks validate recorded declarations, never infer semantic truth from log
 from datetime import datetime
 import hashlib
 import json
+import os
 from pathlib import Path, PureWindowsPath
+from impact import dispute_impacts
 
 
 def read(path):
@@ -47,7 +49,7 @@ def refs(record, field, known):
 def audit_scope(root):
     """Snapshot every historical route, not only the existing dependency graph."""
     paths = {root / "re/targets.json", root / "docs/agents/reverse-project-management.md"}
-    for folder in ("routes", "conditions", "env", "docs", "scripts"):
+    for folder in ("routes", "conditions", "env", "docs", "scripts", "seals"):
         paths.update(p for p in (root / "re" / folder).rglob("*")
                      if p.is_file() and "__pycache__" not in p.parts)
     paths.update((root / "re/runs").glob("*/run.json"))
@@ -70,7 +72,7 @@ def management_summary(root):
                 or r.get("state", {}).get("status") == "pending"]
     if not path.is_file():
         return {"legacy": True, "audit_pending": True, "acceptance_pending": [],
-                "open_disputes": [], "recovery_pending": recovery}
+                "open_disputes": [], "recovery_pending": recovery, "dispute_impacts": []}
     value = read(path)
     audits = value.get("audits", [])
     audit = audits[-1] if audits else {}
@@ -82,13 +84,54 @@ def management_summary(root):
     return {"legacy": False, "audit_pending": pending,
             "acceptance_pending": [a["id"] for a in value.get("acceptance", []) if a.get("status") != "met"],
             "open_disputes": [d for d in value.get("disputes", []) if d.get("status") == "open"],
-            "recovery_pending": recovery}
+            "recovery_pending": recovery,
+            "dispute_impacts": dispute_impacts(value,
+                {p.stem: read(p) for p in (root / "re/routes").glob("*.json")},
+                {p.stem: read(p) for p in (root / "re/conditions").glob("*.json")},
+                {r["id"]: r for r in runs})}
 
 
-def validate_management(root, targets, routes, runs, pending_reviews, hashes=False, complete=False):
-    # Roots are acquisition events, not file formats or exports. Missing legacy
-    # provenance stays structurally readable but cannot count toward acceptance.
+def validate_management(root, targets, routes, runs, pending_reviews, hashes=False, complete=False, conditions=None):
+    # Merge acquisition events that reuse a raw file, even when the caller has
+    # incorrectly assigned distinct event IDs. Equal bytes alone do not merge
+    # genuinely distinct captures.
     roots, visiting = {}, set()
+    capture_parent, raw_owner, capture_for_run = {}, {}, {}
+
+    def capture_root(key):
+        capture_parent.setdefault(key, key)
+        if capture_parent[key] != key:
+            capture_parent[key] = capture_root(capture_parent[key])
+        return capture_parent[key]
+
+    for key, run in runs.items():
+        provenance = run.get("provenance") or {}
+        capture_id = provenance.get("capture_id")
+        if provenance.get("kind") != "acquisition" or not capture_id:
+            continue
+        if not isinstance(capture_id, str) or not capture_id.startswith("CAP-"):
+            raise ValueError(f"{key}: invalid capture_id")
+        raw = refs(provenance, "raw_artifacts", {a["path"] for a in run["artifacts"]})
+        if not raw:
+            raise ValueError(f"{key}: acquisition needs retained raw_artifacts")
+        captured = moment(provenance.get("captured_at"))
+        if run["status"] != "planned" and captured < moment(run["started_at"]):
+            raise ValueError(f"{key}: capture precedes execution; import existing evidence as derived")
+        if run.get("ended_at") and captured > moment(run["ended_at"]):
+            raise ValueError(f"{key}: capture follows execution")
+        capture_for_run[key] = capture_id
+        capture_root(capture_id)
+        for path in raw:
+            identity = os.path.normcase(str((root / path).resolve()))
+            stat = (root / path).stat()
+            identities = [("path", identity)]
+            if stat.st_ino:
+                identities.append(("file", stat.st_dev, stat.st_ino))
+            for identity in identities:
+                if identity in raw_owner:
+                    capture_parent[capture_root(capture_id)] = capture_root(raw_owner[identity])
+                else:
+                    raw_owner[identity] = capture_id
 
     def source_roots(key):
         if key in visiting:
@@ -105,8 +148,8 @@ def validate_management(root, targets, routes, runs, pending_reviews, hashes=Fal
             if kind not in {"acquisition", "derived"} or (kind == "derived") != bool(sources):
                 raise ValueError(f"{key}: invalid provenance kind/source_runs")
             text(provenance, "note")
-            if kind == "acquisition":
-                result = {key}
+            if kind == "acquisition" and key in capture_for_run:
+                result = {capture_root(capture_for_run[key])}
             for parent in sources:
                 if runs[parent]["target"] != run["target"] or runs[parent]["status"] != "completed":
                     raise ValueError(f"{key}: invalid provenance source scope/status")
@@ -149,6 +192,24 @@ def validate_management(root, targets, routes, runs, pending_reviews, hashes=Fal
     for field in ("acceptance", "audits", "disputes"):
         if not isinstance(project.get(field), list):
             raise ValueError(f"project.json: {field} must be a list")
+    impacts = dispute_impacts(project, routes, conditions, runs)
+    affected = {item["route_id"] for item in impacts}
+    for key in affected:
+        if routes[key]["status"] == "active":
+            raise ValueError(f"{key}: open dispute affects this active route/dependency; block or pause it pending review")
+
+    def is_disputed(item, values):
+        evidence_roots = set().union(*(roots[v] for v in values)) if values else set()
+        for dispute in project["disputes"]:
+            if dispute.get("status") != "open":
+                continue
+            if item["id"] in dispute.get("acceptance_ids", []):
+                return True
+            refs = dispute.get("supporting", []) + dispute.get("contradicting", [])
+            disputed_roots = set().union(*(roots.get(v, set()) for v in refs)) if refs else set()
+            if set(values).intersection(refs) or evidence_roots.intersection(disputed_roots):
+                return True
+        return any(runs[v]["route_id"] in affected for v in values)
 
     def evidence(record, field, allowed_targets, completed=True):
         values = refs(record, field, runs)
@@ -190,8 +251,17 @@ def validate_management(root, targets, routes, runs, pending_reviews, hashes=Fal
                 raise ValueError(f"{key}: deliverable hash mismatch")
         if item["status"] == "met":
             text(item, "reason")
+            if is_disputed(item, values):
+                raise ValueError(f"{key}: acceptance depends on open disputed evidence/route")
+            coverage = {runs[v]["target"]["id"] for v in values}
+            if set(target_ids) - coverage:
+                raise ValueError(f"{key}: acceptance target coverage missing: {sorted(set(target_ids) - coverage)}")
             if not values or len(set().union(*(roots[v] for v in values))) < minimum:
                 raise ValueError(f"{key}: insufficient independent evidence sources")
+            for target_id in target_ids:
+                target_roots = set().union(*(roots[v] for v in values if runs[v]["target"]["id"] == target_id))
+                if len(target_roots) < minimum:
+                    raise ValueError(f"{key}: insufficient independent evidence for target {target_id}")
 
     seen = set()
     for dispute in project["disputes"]:
@@ -201,6 +271,8 @@ def validate_management(root, targets, routes, runs, pending_reviews, hashes=Fal
         seen.add(key)
         text(dispute, "claim", "scope")
         associated = refs(dispute, "route_ids", routes)
+        if "acceptance_ids" in dispute:
+            refs(dispute, "acceptance_ids", {a["id"] for a in project["acceptance"]})
         allowed = {t for r in associated for t in routes[r]["target_ids"]}
         if not associated or type(dispute.get("critical")) is not bool:
             raise ValueError(f"{key}: dispute needs routes and critical flag")

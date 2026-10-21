@@ -19,6 +19,7 @@ from urllib.parse import quote
 from impact import (CONDITION_STATES, REVIEW_OUTCOMES, affected_routes,
                     impact_report, read_records, report_for_project)
 from governance import audit_scope, management_summary, validate_management
+from integrity import checked_path, seal_run, verify_seals, write_new
 
 SKILL = Path(__file__).resolve().parent.parent
 NAME = "reverse-project-management"
@@ -90,6 +91,7 @@ def inventory(root):
         ("共享条件", sorted((root / "re/conditions").glob("*.json"))),
         ("路线", sorted((root / "re/routes").glob("*.json"))),
         ("运行/证据", sorted((root / "re/runs").glob("*/run.json"))),
+        ("封存基线", sorted((root / "re/seals").rglob("*.json"))),
         ("专题文档", sorted(p for p in (root / "re/docs").rglob("*") if p.is_file())),
         ("复用脚本", sorted(p for p in (root / "re/scripts").rglob("*")
                         if p.is_file() and "__pycache__" not in p.parts)),
@@ -120,6 +122,8 @@ def inventory(root):
     for dispute in summary["open_disputes"]:
         severity = "阻止完成" if dispute["critical"] else "交接披露"
         lines.append(f"- {dispute['id']}：有争议；路线 {', '.join(dispute['route_ids'])}；{severity}，见 re/project.json。")
+    for item in summary["dispute_impacts"]:
+        lines.append(f"- 争议复查 {item['dispute_id']} → {item['route_id']}：{item['relation']}；历史状态 {item['route_status']} 保留，当前结论不可作为可靠前提。")
     lines.append("")
     return "\n".join(lines)
 
@@ -134,6 +138,8 @@ def index_parts(root):
 
 
 def refresh(root):
+    root = root.resolve()
+    checked_path(root, root / "INDEX.md")
     prefix, _, suffix = index_parts(root)
     value = prefix + START + inventory(root) + END + suffix
     # Replace only the mutable index, never an experiment artifact.
@@ -157,7 +163,8 @@ def initialize(root):
     if not config.resolve().is_relative_to(root):
         raise ValueError("repository config destination resolves outside project")
     for path in (root / "INDEX.md", root / "re", destination, config):
-        if path.exists():
+        checked_path(root, path)
+        if os.path.lexists(path):
             raise ValueError(f"refusing initialization over existing path: {path}")
     if root.exists() and not root.is_dir():
         raise ValueError(f"project root is not a directory: {root}")
@@ -165,11 +172,11 @@ def initialize(root):
     shutil.copytree(SKILL, destination, ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
     for directory in ("docs", "scripts", "routes", "runs", "env", "conditions"):
         (root / "re" / directory).mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(SKILL / "assets/INDEX.md", root / "INDEX.md")
+    write_new(root, root / "INDEX.md", (SKILL / "assets/INDEX.md").read_bytes())
     config.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(SKILL / "assets/project-management.md", config)
+    write_new(root, config, (SKILL / "assets/project-management.md").read_bytes())
     save_new(root / "re/targets.json", {"schema_version": 1, "targets": []})
-    shutil.copyfile(SKILL / "assets/project.json", root / "re/project.json")
+    write_new(root, root / "re/project.json", (SKILL / "assets/project.json").read_bytes())
     refresh(root)
 
 
@@ -208,10 +215,11 @@ def check_hash(value, context):
         raise ValueError(f"{context}: expected lowercase SHA256")
 
 
-def validate(root, hashes, complete=False):
-    _, nav, _ = index_parts(root)
-    if nav != inventory(root):
-        raise ValueError("INDEX navigation stale; run index")
+def validate(root, hashes, complete=False, allow_unsealed=False, check_index=True):
+    if check_index:
+        _, nav, _ = index_parts(root)
+        if nav != inventory(root):
+            raise ValueError("INDEX navigation stale; run index")
     manifest = load(root / "re/targets.json")
     if manifest.get("schema_version") != 1 or not isinstance(manifest.get("targets"), list):
         raise ValueError("targets.json: unsupported schema")
@@ -316,7 +324,11 @@ def validate(root, hashes, complete=False):
                 raise ValueError(f"{key}: tools with versions required")
             for tool in run["tools"]:
                 require_text(tool, ("name", "version"), key)
-            local_file(root, run.get("environment", {}).get("snapshot"))
+            environment = run.get("environment", {})
+            snapshot = local_file(root, environment.get("snapshot"))
+            check_hash(environment.get("snapshot_sha256"), f"{key}/environment")
+            if hashes and digest(snapshot) != environment["snapshot_sha256"]:
+                raise ValueError(f"{key}: environment snapshot hash mismatch")
             if not isinstance(run.get("artifacts"), list) or not run["artifacts"]:
                 raise ValueError(f"{key}: terminal run needs retained artifacts")
             if run["status"] == "completed":
@@ -361,6 +373,25 @@ def validate(root, hashes, complete=False):
             if not refs or any(item not in route["evidence"] for item in refs):
                 raise ValueError(f"{key}: closure needs registered evidence")
             evidence_refs(refs, route, key, completed=True)
+            if status == "falsified":
+                for field in ("observation_refs", "control_refs"):
+                    locators = closure.get(field)
+                    if not isinstance(locators, list) or not locators:
+                        raise ValueError(f"{key}: falsification needs observation/control references ({field})")
+                    for locator in locators:
+                        run_id = locator.get("run_id")
+                        if run_id not in route["evidence"]:
+                            raise ValueError(f"{key}: observation/control run not registered")
+                        evidence_refs([run_id], route, key, completed=True)
+                        observation = runs[run_id].get("observation", {})
+                        require_text(observation, ("trigger", "window", "coverage", "control"), f"{key}/observation")
+                        if observation.get("chain_status") != "passed":
+                            raise ValueError(f"{key}: observation chain not passed")
+                        if field == "observation_refs" and run_id not in refs:
+                            raise ValueError(f"{key}: observation run not in closure evidence")
+                        require_text(locator, ("path", "locator"), f"{key}/observation")
+                        if locator["path"] not in {a["path"] for a in runs[run_id]["artifacts"]}:
+                            raise ValueError(f"{key}: observation/control artifact not registered")
         if status == "superseded":
             if not isinstance(closure, dict):
                 raise ValueError(f"{key}: superseded closure required")
@@ -454,12 +485,14 @@ def validate(root, hashes, complete=False):
         timestamp(snapshot.get("collected_at"), str(path))
         if not isinstance(snapshot.get("host"), dict) or not isinstance(snapshot.get("tools"), list):
             raise ValueError(f"{path}: host object/tools list required")
-    management = validate_management(root, targets, routes, runs, pending, hashes, complete)
+    management = validate_management(root, targets, routes, runs, pending, hashes, complete, conditions)
+    verify_seals(root, targets, runs, allow_unsealed)
     return {"targets": len(targets), "routes": len(routes), "runs": len(runs),
             "conditions": len(conditions), "pending_reviews": len(pending), "hashes_verified": hashes,
             "audit_pending": management["audit_pending"],
             "open_disputes": len(management["open_disputes"]),
             "recovery_pending": len(management["recovery_pending"]),
+            "dispute_impacts": len(management["dispute_impacts"]),
             "completion_checked": complete or (not management["legacy"] and load(root / "re/project.json")["status"] == "completed")}
 
 
@@ -504,6 +537,9 @@ def main():
             command.add_argument("--complete", action="store_true", help="require project completion evidence and closed obligations")
     command = sub.add_parser("probe")
     command.add_argument("--output", type=Path)
+    command = sub.add_parser("seal", help="seal one finished run after checking its original evidence")
+    command.add_argument("root", type=Path)
+    command.add_argument("run_id")
     args = parser.parse_args()
     try:
         if args.command == "probe":
@@ -526,6 +562,16 @@ def main():
                 print(json.dumps(report_for_project(root), ensure_ascii=False, indent=2))
             elif args.command == "audit-scope":
                 print(json.dumps(audit_scope(root), ensure_ascii=False, indent=2))
+            elif args.command == "seal":
+                identifier(args.run_id, "run")
+                validate(root, True, allow_unsealed=True, check_index=False)
+                run = load(local_file(root, f"re/runs/{args.run_id}/run.json"))
+                if run["status"] not in TERMINAL_RUNS:
+                    raise ValueError("seal requires a finished run with retained execution facts")
+                targets = load(root / "re/targets.json")["targets"]
+                target = next(item for item in targets if item["id"] == run["target"]["id"])
+                seal_run(root, target, run)
+                print(f"Sealed {args.run_id}; preserve re/seals in reviewed version control; refresh INDEX.")
             else:
                 print(json.dumps(validate(root, args.hashes, args.complete), ensure_ascii=False))
     except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError) as error:

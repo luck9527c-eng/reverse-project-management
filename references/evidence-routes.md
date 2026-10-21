@@ -54,7 +54,13 @@
 2. **判据**：反证条件预先声明，本次结果实际满足该条件。
 3. **观测链**：工具正确运行、目标动作实际触发、窗口与采样覆盖足够；正向对照或独立校验能说明本应看见的现象确实可见。
 4. **局限**：明确排除了哪些解释，哪些未覆盖；连接失败、位数错误、权限不足、被截断的输出分别作为阻塞或证据缺口处理。
-5. **闭合记录**：closure 包含 `summary`、`scope`、`criterion`、`coverage`、`control`、`limitations`、`reopen_when`、`evidence`，全部指向实际记录。
+5. **闭合记录**：closure 包含 `summary`、`scope`、`criterion`、`coverage`、`control`、`limitations`、`reopen_when`、`evidence`，并提供非空 `observation_refs` 与 `control_refs`，定位实际观测和对照产物。引用的运行须 completed、已封存、登记在路线 evidence 中；观测运行还须在 closure.evidence 中。
+
+两类定位项均采用如下形状；`path` 必须是该运行 artifacts 登记的文件，`locator` 填实际行号、时间/事件号或偏移。被引用运行的 observation 各项必须完整且 chain_status 为 passed；对照失败或覆盖不足时不能靠填写 closure 文本证死。
+
+```json
+{"run_id":"RUN-observe","path":"re/runs/RUN-observe/raw/events.log","locator":"行 18-35；触发及正向对照事件"}
+```
 
 负结果特别需要观测链验证；重复同一个无效抓取不会增加反证强度。超时或达到次数预算只满足停止条件，不满足反证条件。
 
@@ -67,13 +73,24 @@
 - `command`：完整可复现命令；附 cwd、参数文件、环境差异、工具版本。敏感值用受控引用，保留复现所需的变量名和获取方式。
 - `target`：目标 ID 与本次实际 SHA256；动态实验另记 PID、启动方式和配置。
 - `scripts` / `artifacts`：项目相对路径与 SHA256；脚本通常指向本运行内快照。raw 与 derived 分开，派生文件增加 `parents` 和 `generated_by`。
-- `observation`：触发动作、开始结束时间、覆盖范围、控制实验和失败情况。
+- `environment`：snapshot 为本次真实环境快照路径，snapshot_sha256 为其字节 SHA256，differences 保存相对差异。共享快照被后续改写会破坏旧运行绑定；环境变化创建新快照。
+- `observation`：trigger 写实际触发动作，window 写观测起止及采样窗口，coverage 写覆盖范围，control 写对照步骤与结果，chain_status 用 unknown / passed / failed 表明观测链是否验证通过。只有有效对照及覆盖支持时才填 passed，并保留原始定位。
 - `result`：结果简述和局限；完成退出不等于假设成立。
 - `provenance`：独立采集或派生运行及直接来源；字段与去重规则见 [来源链](acceptance-audits.md#证据来源链)。
 - `state`：initial 描述实验开始时的目标/宿主状态（进程、快照、配置、缓存等与本轮有关的内容），expected_effects 写预期修改，restore_plan 写恢复命令/顺序与验证方式。开始时将 status 从 not_started 改为 pending；结束核查实际副作用并写 observed_effects，恢复后填 restored 和 verification。确实无需恢复时用 not_needed 并填写核查依据；留有进程/驱动/服务/配置未处理时保持 pending。verification 写实际核查结果并定位到 artifacts 中的日志，恢复操作不能销毁原始证据。
 - 引用文本注明行号；日志注明时间及事件 ID；地址注明地址类型、模块身份与基址；截图保留触发步骤和时间。
 
 辅助校验器要求所有已结束运行至少有产物，成功退出码默认 0；存在特殊成功码时在记录中使用 `accepted_exit_codes` 声明，并说明工具语义。
+
+## 执行封存与更正
+
+运行结束后，先核对目标身份、实际命令/工具、采集事件、环境快照哈希及原始产物，再执行 `project.py seal <root> <RUN-id>`。它校验整个项目的记录与哈希，并允许尚未封存的终态运行，随后只封存指定运行；逐一封存后刷新 INDEX，再执行 check --hashes。若项目已声明完成、验收已失效或存在受争议影响的活动路线，先如实恢复 active / pending、阻塞或暂停相关路线，不能降低门槛以完成封存。
+
+首次封存保存 `re/seals/targets/T-*.json` 的目标身份与 `re/seals/runs/RUN-*.json` 的执行摘要。目标可迁移文件 path，其他身份字段封存后保持原值；目标字节、版本、来源等变化新建 T ID。已结束运行必须有封存才能通过正常检查。未核实的旧材料保留缺口，不能通过为新样本代填旧哈希“补齐”。
+
+封存后的执行字段（含目标绑定、状态、来源链和所有产物哈希）不能原地改写或重新封存。发现错误时保留原记录，另建更正运行引用原运行，并更新路线/争议及其适用性。`state` 的后续恢复评估可追加更新；新增恢复日志另存并在 state 中定位，不能改写已封存 artifacts 清单。
+
+封存是需要保留和审阅的本地基线，随项目提交 Git。它能发现记录与保留基线不一致，不能证明首次填报真实，也不能抵抗同时重写基线与校验器的攻击；核对原始来源和审阅历史仍由 agent/审阅者完成。
 
 ## 中断恢复
 

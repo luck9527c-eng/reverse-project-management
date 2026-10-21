@@ -9,8 +9,11 @@
   "command": "",
   "cwd": ".",
   "tools": [],
-  "environment": {"snapshot": "", "differences": []},
-  "provenance": {"kind": "acquisition", "source_runs": [], "note": ""},
+  "environment": {"snapshot": "", "snapshot_sha256": "", "differences": []},
+  "provenance": {
+    "kind": "acquisition", "capture_id": "", "captured_at": null,
+    "raw_artifacts": [], "source_runs": [], "note": ""
+  },
   "state": {
     "initial": "",
     "expected_effects": "",
@@ -24,7 +27,7 @@
   "artifacts": [],
   "exit_code": null,
   "accepted_exit_codes": [0],
-  "observation": {"trigger": "", "window": "", "coverage": "", "control": ""},
+  "observation": {"trigger": "", "window": "", "coverage": "", "control": "", "chain_status": "unknown"},
   "result": "",
   "limitations": ""
 }

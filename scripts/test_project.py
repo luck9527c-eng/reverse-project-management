@@ -1,6 +1,7 @@
 """Behavioral checks for record integrity; uses only temporary projects."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -157,13 +158,14 @@ class ProjectTests(unittest.TestCase):
                    tools=[{"name": "fixture", "version": "1"}], result="observed",
                    exit_code=0, target={"id": "T-001", "sha256": sha})
         run["environment"]["snapshot"] = env
-        self.finish_metadata(run)
         run["observation"] = dict.fromkeys(["trigger", "window", "coverage", "control"], "fixture")
         run["artifacts"] = [{"path": "re/runs/RUN-test/raw/out.txt",
                              "sha256": hashlib.sha256(b"observed").hexdigest()}]
+        self.finish_metadata(run)
         route["evidence"] = ["RUN-test"]
         self.write_json("re/routes/R-001.json", route)
         self.write_json("re/runs/RUN-test/run.json", run)
+        self.seal(run["id"])
         self.assertEqual(self.check("--hashes").returncode, 0)
         output.write_bytes(b"overwritten")
         self.assertNotEqual(self.check("--hashes").returncode, 0)
@@ -191,7 +193,7 @@ class ProjectTests(unittest.TestCase):
         self.assertNotEqual(self.cli("probe", "--output", path).returncode, 0)
         self.assertEqual(path.read_bytes(), before)
 
-    def add_run(self, route_id, sha, run_id="RUN-shared"):
+    def add_run(self, route_id, sha, run_id="RUN-shared", sealed=True):
         output = self.root / f"re/runs/{run_id}/raw/out.txt"
         output.parent.mkdir(parents=True)
         output.write_bytes(b"new evidence")
@@ -203,14 +205,26 @@ class ProjectTests(unittest.TestCase):
                    tools=[{"name": "fixture", "version": "1"}], result="new evidence",
                    exit_code=0, target={"id": "T-001", "sha256": sha})
         run["environment"]["snapshot"] = env
-        self.finish_metadata(run)
         run["artifacts"] = [{"path": output.relative_to(self.root).as_posix(),
                              "sha256": hashlib.sha256(b"new evidence").hexdigest()}]
+        self.finish_metadata(run)
         self.write_json(f"re/runs/{run_id}/run.json", run)
+        if sealed:
+            self.seal(run_id)
         return run_id
+
+    def seal(self, run_id):
+        result = self.cli("seal", self.root, run_id)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def finish_metadata(self, run):
         run["provenance"]["note"] = "Independent fixture acquisition"
+        run["provenance"].update(capture_id=f"CAP-{run['id']}", captured_at=run["started_at"],
+                                 raw_artifacts=[a["path"] for a in run["artifacts"]])
+        run["environment"]["snapshot_sha256"] = hashlib.sha256(
+            (self.root / run["environment"]["snapshot"]).read_bytes()).hexdigest()
+        run["observation"] = dict.fromkeys(["trigger", "window", "coverage", "control"], "fixture")
+        run["observation"]["chain_status"] = "passed"
         run["state"] = {"initial": "clean fixture", "expected_effects": "new files only",
                         "restore_plan": "none required", "status": "not_needed",
                         "observed_effects": "retained files only", "verification": "no process or global changes",
@@ -279,7 +293,7 @@ class ProjectTests(unittest.TestCase):
 
     def test_interruption_retains_pending_recovery_and_rejects_premature_restoration(self):
         _, sha = self.fixture()
-        run_id = self.add_run("R-001", sha)
+        run_id = self.add_run("R-001", sha, sealed=False)
         path = f"re/runs/{run_id}/run.json"
         run = json.loads((self.root / path).read_text())
         run["status"] = "interrupted"
@@ -289,6 +303,7 @@ class ProjectTests(unittest.TestCase):
                         "recovery": {"at": "2026-10-21T10:00:00Z", "assessment": "Process status unknown",
                                      "next_step": "Inspect owned session without rerunning"}}
         self.write_json(path, run)
+        self.seal(run_id)
         result = self.check()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["recovery_pending"], 1)
@@ -299,12 +314,13 @@ class ProjectTests(unittest.TestCase):
     def test_two_exports_of_one_capture_do_not_satisfy_independent_evidence(self):
         _, sha = self.fixture()
         original = self.add_run("R-001", sha, "RUN-capture")
-        exports = [self.add_run("R-001", sha, name) for name in ("RUN-export-a", "RUN-export-b")]
+        exports = [self.add_run("R-001", sha, name, sealed=False) for name in ("RUN-export-a", "RUN-export-b")]
         for run_id in exports:
             path = f"re/runs/{run_id}/run.json"
             run = json.loads((self.root / path).read_text())
             run["provenance"] = {"kind": "derived", "source_runs": [original], "note": "Same raw capture"}
             self.write_json(path, run)
+            self.seal(run_id)
         value = self.management()
         value.update(goal="Deliver observation", scope="T-001")
         value["acceptance"] = [{"id": "A-001", "requirement": "Independent corroboration", "target_ids": ["T-001"],
@@ -359,12 +375,12 @@ class ProjectTests(unittest.TestCase):
                                "critical": True, "status": "open", "resolution": None}]
         self.save_management(value)
         self.audit_current_scope()
-        self.assertIn("critical", self.check("--complete").stderr)
+        self.assertIn("disput", self.check("--complete").stderr)
 
     def test_provenance_cycle_is_rejected(self):
         _, sha = self.fixture()
         for run_id, parent in [("RUN-a", "RUN-b"), ("RUN-b", "RUN-a")]:
-            self.add_run("R-001", sha, run_id)
+            self.add_run("R-001", sha, run_id, sealed=False)
             path = f"re/runs/{run_id}/run.json"
             run = json.loads((self.root / path).read_text())
             run["provenance"] = {"kind": "derived", "source_runs": [parent], "note": "Invalid cyclic derivation"}
@@ -378,6 +394,303 @@ class ProjectTests(unittest.TestCase):
         value["audits"][-1]["route_reviews"][0].update(outcome="linked", condition_ids=["C-missing"])
         self.save_management(value)
         self.assertIn("condition_ids", self.check().stderr)
+
+    def test_p1_init_rejects_dangling_index_before_any_write(self):
+        self.root.mkdir()
+        outside = Path(self.temp.name) / "outside.md"
+        try:
+            os.symlink(outside, self.root / "INDEX.md")
+        except OSError as error:
+            self.skipTest(f"symbolic links unavailable: {error}")
+        result = self.cli("init", self.root)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(outside.exists())
+        self.assertFalse((self.root / "re").exists())
+        self.assertFalse((self.root / ".agents").exists())
+
+    def test_p1_completed_run_requires_explicit_seal(self):
+        _, sha = self.fixture()
+        self.add_run("R-001", sha)
+        # Remove only the test-created seal if the new fixture sealed it.
+        seal = self.root / "re/seals/runs/RUN-shared.json"
+        if seal.exists():
+            seal.unlink()
+        self.assertIn("unsealed", self.check("--hashes").stderr)
+
+    def test_p1_index_write_accepts_project_root_path_alias(self):
+        from project import refresh
+        self.init()
+        # Windows tempfile paths may use ADMINI~1 while resolve() uses the long name.
+        refresh(self.root)
+        self.assertEqual(self.cli("check", self.root).returncode, 0)
+
+    def test_p1_init_rejects_linked_config_ancestor_before_any_write(self):
+        self.root.mkdir()
+        outside = Path(self.temp.name) / "outside-docs"
+        outside.mkdir()
+        try:
+            os.symlink(outside, self.root / "docs", target_is_directory=True)
+        except OSError as error:
+            self.skipTest(f"symbolic links unavailable: {error}")
+        result = self.cli("init", self.root)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertFalse((self.root / "re").exists())
+        self.assertFalse((self.root / ".agents").exists())
+
+    def test_p1_environment_hash_cannot_be_replaced_with_changed_bytes(self):
+        self.complete_fixture()
+        environment = self.root / "re/env/ENV-shared.json"
+        value = json.loads(environment.read_text())
+        value["host"]["changed"] = True
+        self.write_json("re/env/ENV-shared.json", value)
+        path = "re/runs/RUN-shared/run.json"
+        run = json.loads((self.root / path).read_text())
+        run["environment"]["snapshot_sha256"] = hashlib.sha256(environment.read_bytes()).hexdigest()
+        self.write_json(path, run)
+        self.assertIn("sealed execution", self.check("--hashes").stderr)
+
+    def test_p1_legacy_capture_metadata_does_not_count_as_independent(self):
+        _, sha = self.fixture()
+        run_id = self.add_run("R-001", sha, sealed=False)
+        path = f"re/runs/{run_id}/run.json"
+        run = json.loads((self.root / path).read_text())
+        run["provenance"] = {"kind": "acquisition", "source_runs": [], "note": "Legacy source unknown"}
+        self.write_json(path, run)
+        self.seal(run_id)
+        self.assertEqual(self.check("--hashes").returncode, 0)
+        self.acceptance([run_id])
+        self.assertIn("independent", self.check("--hashes").stderr)
+
+    def test_p1_old_evidence_cannot_rebind_to_new_target(self):
+        self.complete_fixture()
+        data = b"changed target without another acquisition"
+        (self.root / "sample.bin").write_bytes(data)
+        sha = hashlib.sha256(data).hexdigest()
+        targets = json.loads((self.root / "re/targets.json").read_text())
+        targets["targets"][0]["sha256"] = sha
+        self.write_json("re/targets.json", targets)
+        path = "re/runs/RUN-shared/run.json"
+        run = json.loads((self.root / path).read_text())
+        run["target"]["sha256"] = sha
+        self.write_json(path, run)
+        self.audit_current_scope()
+        self.assertIn("sealed", self.check("--hashes", "--complete").stderr)
+
+    def test_p1_rewritten_environment_is_detected(self):
+        self.complete_fixture()
+        self.write_json("re/env/ENV-shared.json", {"collected_at": "2026-10-21T09:00:00Z",
+                                                   "host": {"changed": True}, "tools": []})
+        self.audit_current_scope()
+        self.assertIn("environment", self.check("--hashes", "--complete").stderr)
+
+    def test_p1_same_raw_file_is_not_two_independent_acquisitions(self):
+        _, sha = self.fixture()
+        self.add_run("R-001", sha, "RUN-first")
+        self.add_run("R-001", sha, "RUN-second")
+        first = json.loads((self.root / "re/runs/RUN-first/run.json").read_text())
+        path = "re/runs/RUN-second/run.json"
+        second = json.loads((self.root / path).read_text())
+        second["artifacts"] = first["artifacts"]
+        second["provenance"]["raw_artifacts"] = [first["artifacts"][0]["path"]]
+        self.write_json(path, second)
+        value = self.management()
+        value["acceptance"] = [{"id": "A-001", "requirement": "Two independent acquisitions", "target_ids": ["T-001"],
+                                "status": "met", "evidence": ["RUN-first", "RUN-second"], "deliverables": [],
+                                "reason": "Two imports", "min_independent_sources": 2}]
+        self.save_management(value)
+        # Check provenance before seal integrity to prove independence itself is enforced.
+        self.assertIn("independent", self.check("--hashes").stderr)
+
+    def test_p1_acceptance_covers_every_declared_target(self):
+        self.complete_fixture()
+        targets = json.loads((self.root / "re/targets.json").read_text())
+        targets["targets"].append(dict(targets["targets"][0], id="T-002"))
+        self.write_json("re/targets.json", targets)
+        value = self.management()
+        value["acceptance"][0]["target_ids"] = ["T-001", "T-002"]
+        self.save_management(value)
+        self.audit_current_scope()
+        self.assertIn("coverage", self.check("--hashes", "--complete").stderr)
+
+    def test_p1_noncritical_flag_cannot_hide_acceptance_dispute(self):
+        run_id = self.complete_fixture()
+        value = self.management()
+        value["disputes"] = [{"id": "D-001", "claim": "Acceptance evidence contradicted", "scope": "T-001",
+                               "route_ids": ["R-001"], "acceptance_ids": ["A-001"],
+                               "supporting": [run_id], "contradicting": [run_id],
+                               "critical": False, "status": "open", "resolution": None}]
+        self.save_management(value)
+        self.audit_current_scope()
+        self.assertIn("disput", self.check("--hashes", "--complete").stderr)
+
+    def test_p1_disputed_parent_cannot_support_active_dependency(self):
+        run_id = self.complete_fixture()
+        child = json.loads((self.root / "re/routes/R-001.json").read_text())
+        child.update(id="R-child", status="active", depends_on=["R-001"], evidence=[], closure=None)
+        child["history"] = [{"at": "2026-10-21T09:03:00Z", "from": None, "to": "active",
+                             "reason": "Depends on disputed result", "evidence": []}]
+        self.write_json("re/routes/R-child.json", child)
+        value = self.management()
+        value["disputes"] = [{"id": "D-001", "claim": "Parent has contrary evidence", "scope": "T-001",
+                               "route_ids": ["R-001"], "supporting": [run_id], "contradicting": [run_id],
+                               "critical": True, "status": "open", "resolution": None}]
+        self.save_management(value)
+        self.assertIn("disput", self.check("--hashes").stderr)
+        report = json.loads(self.cli("impact", self.root).stdout)
+        self.assertEqual({x["route_id"] for x in report["dispute_impacts"]}, {"R-001", "R-child"})
+
+    def test_p1_falsification_requires_observation_and_control_references(self):
+        self.complete_fixture()
+        path = "re/routes/R-001.json"
+        route = json.loads((self.root / path).read_text())
+        route["status"] = route["history"][-1]["to"] = "falsified"
+        route["closure"].update(criterion="criterion", coverage="claimed coverage", control="claimed control",
+                                 reopen_when="new evidence")
+        self.write_json(path, route)
+        self.assertIn("observation", self.check("--hashes").stderr)
+
+    def acceptance(self, evidence, targets=None, minimum=1):
+        value = self.management()
+        value["acceptance"] = [{"id": "A-001", "requirement": "Fixture target coverage", "target_ids": targets or ["T-001"],
+                                "status": "met", "evidence": evidence, "deliverables": [], "reason": "Observed fixture",
+                                "min_independent_sources": minimum}]
+        self.save_management(value)
+
+    def test_p1_hardlinked_raw_file_is_one_acquisition(self):
+        _, sha = self.fixture()
+        self.add_run("R-001", sha, "RUN-first")
+        self.add_run("R-001", sha, "RUN-second", sealed=False)
+        first = self.root / "re/runs/RUN-first/raw/out.txt"
+        second = self.root / "re/runs/RUN-second/raw/out.txt"
+        second.unlink()
+        try:
+            os.link(first, second)
+        except OSError as error:
+            self.skipTest(f"hard links unavailable: {error}")
+        self.seal("RUN-second")
+        self.acceptance(["RUN-first", "RUN-second"], minimum=2)
+        self.assertIn("independent", self.check("--hashes").stderr)
+
+    def test_p1_equal_bytes_from_separate_captures_can_be_independent(self):
+        _, sha = self.fixture()
+        self.add_run("R-001", sha, "RUN-first")
+        self.add_run("R-001", sha, "RUN-second")
+        self.acceptance(["RUN-first", "RUN-second"], minimum=2)
+        self.assertEqual(self.check("--hashes").returncode, 0)
+
+    def test_p1_target_coverage_and_independence_are_both_per_target(self):
+        route, sha = self.fixture()
+        targets = json.loads((self.root / "re/targets.json").read_text())
+        targets["targets"].append(dict(targets["targets"][0], id="T-002"))
+        self.write_json("re/targets.json", targets)
+        route["target_ids"].append("T-002")
+        self.write_json("re/routes/R-001.json", route)
+        for name, target in [("RUN-a", "T-001"), ("RUN-b", "T-001"), ("RUN-c", "T-002"), ("RUN-d", "T-002")]:
+            self.add_run("R-001", sha, name, sealed=False)
+            path = f"re/runs/{name}/run.json"
+            run = json.loads((self.root / path).read_text())
+            run["target"]["id"] = target
+            self.write_json(path, run)
+            self.seal(name)
+        self.acceptance(["RUN-a", "RUN-b", "RUN-c"], ["T-001", "T-002"], 2)
+        self.assertIn("independent evidence for target T-002", self.check("--hashes").stderr)
+        self.acceptance(["RUN-a", "RUN-b", "RUN-c", "RUN-d"], ["T-001", "T-002"], 2)
+        self.assertEqual(self.check("--hashes").returncode, 0)
+
+    def test_p1_seal_cannot_be_replaced_and_execution_changes_are_detected(self):
+        self.complete_fixture()
+        self.assertIn("overwrite", self.cli("seal", self.root, "RUN-shared").stderr)
+        path = "re/runs/RUN-shared/run.json"
+        run = json.loads((self.root / path).read_text())
+        run["command"] = "different command not executed"
+        self.write_json(path, run)
+        self.assertIn("sealed execution", self.check().stderr)
+        self.assertIn("sealed execution", self.cli("seal", self.root, "RUN-shared").stderr)
+
+    def test_p1_recovery_can_be_updated_without_rewriting_execution(self):
+        self.complete_fixture()
+        path = "re/runs/RUN-shared/run.json"
+        run = json.loads((self.root / path).read_text())
+        run["state"].update(status="pending", verification="", observed_effects="A retained fixture marker needs review")
+        self.write_json(path, run)
+        result = self.check("--hashes")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["recovery_pending"], 1)
+
+    def test_p1_dispute_propagates_through_shared_condition(self):
+        condition, sha = self.condition_fixture()
+        run_id = self.add_run("R-004", sha)
+        condition.update(state="satisfied", evidence=[run_id])
+        condition["history"][0].update(state="satisfied", evidence=[run_id])
+        self.write_json("re/conditions/C-001.json", condition)
+        value = self.management()
+        value["disputes"] = [{"id": "D-001", "claim": "Capture condition contradicted", "scope": "T-001",
+                               "route_ids": ["R-004"], "supporting": [run_id], "contradicting": [run_id],
+                               "critical": False, "status": "open", "resolution": None}]
+        self.save_management(value)
+        report = json.loads(self.cli("impact", self.root).stdout)
+        self.assertEqual({x["route_id"] for x in report["dispute_impacts"]}, {"R-001", "R-002", "R-003", "R-004"})
+
+    def test_p1_disputed_source_blocks_derived_acceptance(self):
+        _, sha = self.fixture()
+        first = self.add_run("R-001", sha, "RUN-first")
+        derived = self.add_run("R-001", sha, "RUN-derived", sealed=False)
+        path = f"re/runs/{derived}/run.json"
+        run = json.loads((self.root / path).read_text())
+        run["provenance"] = {"kind": "derived", "source_runs": [first], "note": "Export of disputed source"}
+        self.write_json(path, run)
+        self.seal(derived)
+        self.acceptance([derived])
+        value = self.management()
+        value["disputes"] = [{"id": "D-001", "claim": "Source contradicted", "scope": "T-001",
+                               "route_ids": ["R-001"], "supporting": [first], "contradicting": [first],
+                               "critical": False, "status": "open", "resolution": None}]
+        self.save_management(value)
+        self.assertIn("disput", self.check("--hashes").stderr)
+
+    def test_p1_valid_falsification_needs_locatable_chain(self):
+        run_id = self.complete_fixture()
+        route = json.loads((self.root / "re/routes/R-001.json").read_text())
+        route["status"] = route["history"][-1]["to"] = "falsified"
+        locator = {"run_id": run_id, "path": f"re/runs/{run_id}/raw/out.txt", "locator": "line 1"}
+        route["closure"].update(criterion="fixture criterion", coverage="fixture window", control="fixture control",
+                                 reopen_when="new evidence", observation_refs=[locator], control_refs=[dict(locator)])
+        self.write_json("re/routes/R-001.json", route)
+        self.assertEqual(self.check("--hashes").returncode, 0)
+        route["closure"]["control_refs"][0]["path"] = "unregistered.txt"
+        self.write_json("re/routes/R-001.json", route)
+        self.assertIn("artifact not registered", self.check("--hashes").stderr)
+
+    def test_p1_failed_observation_chain_cannot_support_falsification(self):
+        route, sha = self.fixture()
+        run_id = self.add_run("R-001", sha, sealed=False)
+        path = f"re/runs/{run_id}/run.json"
+        run = json.loads((self.root / path).read_text())
+        run["observation"]["chain_status"] = "failed"
+        self.write_json(path, run)
+        self.seal(run_id)
+        locator = {"run_id": run_id, "path": f"re/runs/{run_id}/raw/out.txt", "locator": "line 1"}
+        route.update(status="falsified", evidence=[run_id])
+        route["history"].append({"at": "2026-10-21T09:02:00Z", "from": "planned", "to": "falsified",
+                                 "reason": "Claimed negative observation", "evidence": [run_id]})
+        route["closure"] = dict.fromkeys(["summary", "scope", "criterion", "coverage", "control", "limitations", "reopen_when"], "Fixture claim")
+        route["closure"].update(evidence=[run_id], observation_refs=[locator], control_refs=[dict(locator)])
+        self.write_json("re/routes/R-001.json", route)
+        self.assertIn("observation chain not passed", self.check("--hashes").stderr)
+
+    def test_p1_resolved_dispute_retains_history_and_clears_impact(self):
+        run_id = self.complete_fixture()
+        value = self.management()
+        value["disputes"] = [{"id": "D-001", "claim": "Synthetic contradictory interpretations", "scope": "T-001",
+                               "route_ids": ["R-001"], "supporting": [run_id], "contradicting": [run_id],
+                               "critical": False, "status": "resolved",
+                               "resolution": {"at": "2026-10-21T09:04:00Z", "reason": "Fixture scope comparison resolved interpretation",
+                                              "outcome": "Different scopes explained", "evidence": [run_id]}}]
+        self.save_management(value)
+        self.assertEqual(json.loads(self.cli("impact", self.root).stdout)["dispute_impacts"], [])
+        self.assertEqual(self.check("--hashes").returncode, 0)
+        self.assertEqual(self.management()["disputes"][0]["status"], "resolved")
 
     def test_impact_finds_direct_and_transitive_routes_without_changing_them(self):
         self.condition_fixture()
@@ -446,6 +759,8 @@ class ProjectTests(unittest.TestCase):
                             "criterion": "declared criterion", "coverage": "old window",
                             "control": "old control", "limitations": "old setup only",
                             "reopen_when": "new capture capability", "evidence": [historical]}
+        route["closure"].update(observation_refs=[{"run_id": historical, "path": f"re/runs/{historical}/raw/out.txt", "locator": "line 1"}],
+                                 control_refs=[{"run_id": historical, "path": f"re/runs/{historical}/raw/out.txt", "locator": "line 1: synthetic control"}])
         route["history"].append({"at": "2026-10-21T09:02:00Z", "from": "planned", "to": "falsified",
                                  "reason": "Old controlled observation", "evidence": [historical]})
         self.write_json(path, route)

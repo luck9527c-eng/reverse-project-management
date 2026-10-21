@@ -42,6 +42,7 @@ python <skill-dir>/scripts/project.py init <analysis-repository>
 在已初始化项目中使用仓库内副本：
 
 ```text
+python .agents/skills/reverse-project-management/scripts/project.py seal . <RUN-id>
 python .agents/skills/reverse-project-management/scripts/project.py impact .
 python .agents/skills/reverse-project-management/scripts/project.py audit-scope .
 python .agents/skills/reverse-project-management/scripts/project.py index .
@@ -49,6 +50,10 @@ python .agents/skills/reverse-project-management/scripts/project.py check . --ha
 ```
 
 声明项目完成前另加 `--complete`，并人工核对验收判据与证据。结构校验通过只说明记录满足检查条件。
+
+每次运行事实补齐、原始来源核对后执行一次 seal，保存目标身份和执行摘要；将 re/seals 与记录一起提交 Git。后续 check 对照基线，--hashes 同时核验环境快照和产物字节。更正使用新记录，保留原封存；本地基线不证明首次记录真实。
+
+验收逐目标检查采集来源，同一文件或其硬链接不能冒充多次独立采集。impact 同时列出条件复查和争议影响；受争议影响的活动路线与验收须先阻塞/暂停及恢复 pending，critical=false 不能绕过。
 
 ## 验证辅助脚本
 
