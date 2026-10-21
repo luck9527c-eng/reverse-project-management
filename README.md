@@ -8,6 +8,7 @@
 - 证据驱动：绑定目标 SHA256，保留运行命令、工具版本、脚本快照、原始产物与来源链。
 - 路线管理：区分阻塞、暂停、验证与证死；共享条件变化触发直接关联和下游路线复查，保留旧结论范围。
 - 项目交接：检查历史路线的遗漏关联，维护验收、矛盾证据、同源去重和中断实验恢复待办。
+- 单轮推进：筛选当前可领取路线，把宽泛目标收敛成可验证问题，在 INDEX 留下可冷启动的下一步。
 - 工具优先：按路线需要检查并补齐 REA MCP、HyperDBG、Frida 等成熟工具，优先使用现有能力与导出。
 
 完整工作流见 [SKILL.md](SKILL.md)；各项细则由其中的按需链接触达。
@@ -64,3 +65,9 @@ python -B scripts/test_project.py
 ```
 
 测试使用临时项目，不启动分析目标或安装分析工具。
+
+## 工作流借鉴
+
+本轮参考 [mattpocock/skills 的固定版本 5beb35b](https://github.com/mattpocock/skills/tree/5beb35b040e3de97e54fa9e386d7e42d15c295c2)：[setup-matt-pocock-skills](https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/engineering/setup-matt-pocock-skills/SKILL.md) 的仓库配置与读取指针、[writing-for-agents](https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/writing-for-agents/SKILL.md) 的按需阅读、[wayfinder](https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/engineering/wayfinder/SKILL.md) / [to-tickets](https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/engineering/to-tickets/SKILL.md) 的依赖与单轮任务、[handoff](https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/handoff/SKILL.md) 的引用式交接，以及 [retro](https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/engineering/retro/SKILL.md) 的工作环境改进。
+
+这些原则适配到已有 INDEX、路线和运行记录中，具体操作见 [工作会话](references/work-sessions.md)。使用本 skill 无须安装上述 skills 或另建 issue tracker。

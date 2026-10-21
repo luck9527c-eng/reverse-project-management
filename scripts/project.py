@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Initialize and validate a repository's reverse-engineering management records.
 
-Only init/index/probe --output write files. No command launches analysis tools,
+Only init/index/seal/probe --output write files. No command launches analysis tools,
 executes targets, installs packages, or changes global configuration.
 """
 import argparse

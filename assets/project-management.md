@@ -25,6 +25,8 @@
 ## Consumer rules
 
 - 开始工作先读 INDEX 的当前工作集、目标身份、环境缺口与下一步，再沿链接读取相关路线和证据。首次接管额外阅读本配置和实际目录。
+- 首次配置或改接入口时读 [仓库配置流程](../../.agents/skills/reverse-project-management/references/project-setup.md)。已有设置直接复用。
+- 选路线、把宽泛目标拆成单轮问题、断点接手和交接时读 [工作会话规则](../../.agents/skills/reverse-project-management/references/work-sessions.md)。只领取当前前提可用且产出明确的工作；未细化问题留在 INDEX。
 - 创建或整理材料时读 [目录与保全规则](../../.agents/skills/reverse-project-management/references/layout.md)。INDEX 管导航，详细事实保存在对应记录中。
 - 建路线、处理负结果、证死或重开时读 [证据与路线规则](../../.agents/skills/reverse-project-management/references/evidence-routes.md)。结论绑定目标哈希；预算耗尽和观测失败分别记录为暂停或阻塞。
 - 关键新发现或工具/前提变化时读 [跨路线复查规则](../../.agents/skills/reverse-project-management/references/cross-route-review.md)，更新共享条件版本，自动检查关联路线和下游依赖。旧结论保留范围，复查与重验按优先级和预算安排，并在 INDEX 保留待办。
