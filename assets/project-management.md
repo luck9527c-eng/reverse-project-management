@@ -28,7 +28,7 @@
 - 开始工作先读 INDEX 的当前工作集、目标身份、环境缺口与下一步，再沿链接读取相关路线和证据。首次接管额外阅读本配置和实际目录。
 - 首次配置或改接入口时读 [仓库配置流程](../../.agents/skills/reverse-project-management/references/project-setup.md)。已有设置直接复用。
 - 选路线、把宽泛目标拆成单轮问题、断点接手和交接时读 [工作会话规则](../../.agents/skills/reverse-project-management/references/work-sessions.md)。只领取当前前提可用且产出明确的工作；未细化问题留在 INDEX。
-- 多 agent 并行、插件派发、成员交付和重派时读 [团队协作规则](../../.agents/skills/reverse-project-management/references/team-coordination.md)，再读下节登记的编排契约。执行者在独立工作区记录，整合者统一更新共享权威记录和封存。
+- 多 agent 并行（`redteam-lead` 模式）、派发、成员交付和重派时读 [团队协作规则](../../.agents/skills/reverse-project-management/references/team-coordination.md)。工兵在独立工作区记录，Lead 统一更新共享权威记录和封存。
 - 创建或整理材料时读 [目录与保全规则](../../.agents/skills/reverse-project-management/references/layout.md)。INDEX 管导航，详细事实保存在对应记录中。
 - 建路线、处理负结果、证死或重开时读 [证据与路线规则](../../.agents/skills/reverse-project-management/references/evidence-routes.md)。结论绑定目标哈希；预算耗尽和观测失败分别记录为暂停或阻塞。
 - 关键新发现或工具/前提变化时读 [跨路线复查规则](../../.agents/skills/reverse-project-management/references/cross-route-review.md)，更新共享条件版本，自动检查关联路线和下游依赖。旧结论保留范围，复查与重验按优先级和预算安排，并在 INDEX 保留待办。
@@ -43,7 +43,7 @@
 
 ## 协作方式
 
-默认单人，直接沿用每轮闭环。启用团队时在本节登记：整合者与当前会话绑定、编排契约路径、编排记录入口、独立工作区、运行 ID 分配、资源共享/独占规则及提交交接方式。任务板管理执行，不替代路线与 RUN；从 INDEX 手写区链接编排记录。没有插件时可按团队规则约定人工交接。
+默认单人，直接沿用每轮闭环。启用团队（`redteam-lead` 模式）时在本节登记：Lead 会话、独立工作区、运行 ID 分配、资源共享/独占规则及提交交接方式。任务板管理执行，不替代路线与 RUN；从 INDEX 手写区链接任务板与交接入口。不在团队模式下时按团队协作规则约定人工交接。
 
 共享模板更新不覆盖项目副本；已有项目接入团队时比较差异并局部合并规则和指针，保留本仓库约定。
 
