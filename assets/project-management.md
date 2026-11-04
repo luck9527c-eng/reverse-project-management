@@ -14,6 +14,7 @@
 | 目标身份 | `re/targets.json` |
 | 项目验收、阶段审计与证据争议 | `re/project.json` |
 | 环境快照 | `re/env/` |
+| 当前工具清单及生成文档 | `re/env/tools.json`、`re/env/tools.md`；历史引用使用 `ENV-tools-*.json` |
 | 目标与执行封存基线 | `re/seals/targets/`、`re/seals/runs/` |
 | 路线记录 | `re/routes/` |
 | 共享前提与阻塞条件 | `re/conditions/` |
@@ -27,6 +28,7 @@
 - 开始工作先读 INDEX 的当前工作集、目标身份、环境缺口与下一步，再沿链接读取相关路线和证据。首次接管额外阅读本配置和实际目录。
 - 首次配置或改接入口时读 [仓库配置流程](../../.agents/skills/reverse-project-management/references/project-setup.md)。已有设置直接复用。
 - 选路线、把宽泛目标拆成单轮问题、断点接手和交接时读 [工作会话规则](../../.agents/skills/reverse-project-management/references/work-sessions.md)。只领取当前前提可用且产出明确的工作；未细化问题留在 INDEX。
+- 多 agent 并行、插件派发、成员交付和重派时读 [团队协作规则](../../.agents/skills/reverse-project-management/references/team-coordination.md)，再读下节登记的编排契约。执行者在独立工作区记录，整合者统一更新共享权威记录和封存。
 - 创建或整理材料时读 [目录与保全规则](../../.agents/skills/reverse-project-management/references/layout.md)。INDEX 管导航，详细事实保存在对应记录中。
 - 建路线、处理负结果、证死或重开时读 [证据与路线规则](../../.agents/skills/reverse-project-management/references/evidence-routes.md)。结论绑定目标哈希；预算耗尽和观测失败分别记录为暂停或阻塞。
 - 关键新发现或工具/前提变化时读 [跨路线复查规则](../../.agents/skills/reverse-project-management/references/cross-route-review.md)，更新共享条件版本，自动检查关联路线和下游依赖。旧结论保留范围，复查与重验按优先级和预算安排，并在 INDEX 保留待办。
@@ -35,12 +37,20 @@
 - 运行结束后核对真实采集身份、环境快照哈希与产物，执行 seal，再引用为结论/验收依据；封存基线随项目进入经审阅的 Git。已封存执行事实使用新记录更正，恢复评估在 state 中追加。
 - 验收覆盖 target_ids 中的每个目标并分别满足独立采集数量。open 争议影响沿来源、共享条件和路线依赖传播：活动路线先阻塞/暂停，受影响验收恢复 pending，critical=false 不能豁免。
 - 检查或补齐工具时读 [环境规则](../../.agents/skills/reverse-project-management/references/environment.md)。区分发现、启动、会话可调用和目标适配。
+- 发现本机/便携工具、建立工具文档或刷新状态时读 [工具清单规则](../../.agents/skills/reverse-project-management/references/tool-inventory.md)。登记实际工具根，JSON 驱动 Markdown；正式 RUN 引用不可变快照。
 - 成熟工具覆盖的工作优先使用 REA MCP、HyperDBG、Frida 等现有能力；缺连接先修环境，不以手写解析器代替已有能力。
 - 产生证据或改变路线后更新对应记录和 INDEX。交接前刷新导航并校验，保留真实失败和未知项。
+
+## 协作方式
+
+默认单人，直接沿用每轮闭环。启用团队时在本节登记：整合者与当前会话绑定、编排契约路径、编排记录入口、独立工作区、运行 ID 分配、资源共享/独占规则及提交交接方式。任务板管理执行，不替代路线与 RUN；从 INDEX 手写区链接编排记录。没有插件时可按团队规则约定人工交接。
+
+共享模板更新不覆盖项目副本；已有项目接入团队时比较差异并局部合并规则和指针，保留本仓库约定。
 
 ## 本仓库的工具与安装选择
 
 - 工具按目标和下一条路线需要选取；当前选择及就绪状态记录在 INDEX 链接的环境快照中。
+- 本机便携工具根和已知入口在本节按实际填写，需要机器可读配置时保存为 `docs/agents/tool-discovery.json` 并在此链接，字段见工具清单规则；默认不扫描整盘。工具清单路径见上表；INDEX 链接生成的 tools.md，相关缺口首次出现或变化时报告。
 - 用户已授权自行补齐的工具在该范围内直接安装和验证，优先使用隔离环境或便携目录；需要额外授权的具体系统变更按实际影响处理。
 - 安装命令、版本、来源、配置差异和撤销方式写入仓库记录，不回写共享 skill。
 

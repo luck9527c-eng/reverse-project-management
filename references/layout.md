@@ -14,6 +14,8 @@ project/
     targets.json               目标身份与来源
     project.json               项目验收、阶段关联审计与证据争议
     env/ENV-*.json             带时间的环境快照、安装和验证结果
+    env/tools.json            当前工具清单；运行证据引用不可变 ENV-tools 快照
+    env/tools.md              从当前清单生成的可读工具文档
     seals/targets/T-*.json     已用于运行的目标身份基线
     seals/runs/RUN-*.json      已结束运行的执行封存基线
     routes/R-001.json          路线的权威状态、判定标准与变更历史
@@ -100,4 +102,4 @@ targets.json 的形状：
 
 阶段结束和交接按 [验收与审计](acceptance-audits.md) 盘点全部历史路线的遗漏关联，更新审计范围、项目验收缺口、争议及遗留实验状态。INDEX 列出的待办不能被“校验通过”或新摘要掩盖。
 
-多人或多 agent 工作时分配独立路线和运行目录；INDEX 指定一个整合者，合并前重读最新路线状态，避免状态回退和 ID 冲突。工具共享会话、目标进程和端口要说明归属。
+多人或多 agent 工作时按 [团队协作](team-coordination.md) 分配独立工作区，由一个整合者统一维护正式路线、归档 RUN、封存和 INDEX。编排记录及暂存目录按仓库配置另设，从 INDEX 手写区链接；它们不替代上述权威记录，现有脚本也不自动索引或校验编排状态。工具共享会话、目标进程和端口要说明归属。

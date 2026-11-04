@@ -1,6 +1,6 @@
 ---
 name: reverse-project-management
-description: 适用于建立或接管逆向项目的工程管理、维护 INDEX 总入口、组织脚本与实验产物、管理证据和路线证死、跨路线发现触发复查，以及检查和补齐本机工具环境时。
+description: 适用于建立或接管逆向项目、维护 INDEX 与证据和路线记录、协调多 agent 的实验交接和事实整合、跨路线复查，以及检查和补齐本机工具环境时。
 ---
 
 # 逆向项目工程管理
@@ -18,12 +18,16 @@ description: 适用于建立或接管逆向项目的工程管理、维护 INDEX 
 | 尚未配置仓库、接入 agent 入口或适配已有配置 | [首次配置](references/project-setup.md)，使用 [配置种子](assets/project-management.md) |
 | 整理路径、文档、脚本、样本与产物 | [项目布局与保全](references/layout.md) |
 | 选择可领取路线、缩小单轮问题、断点接手或交接 | [工作会话](references/work-sessions.md) |
+| 多 agent 并行、通过编排插件派发、接收成员结果或重派 | [团队协作](references/team-coordination.md)，并读取仓库配置中的编排契约 |
 | 建路线、记录实验、证死或更正封存事实 | [证据与路线](references/evidence-routes.md)，使用 [路线](assets/route.json) / [运行](assets/run.json) 模板 |
 | 新证据改变前提、解除旧阻塞、争议影响下游 | [跨路线复查](references/cross-route-review.md)，使用 [条件模板](assets/condition.json) |
 | 定义验收、处理争议、阶段结束或声明完成 | [验收与审计](references/acceptance-audits.md)，使用 [项目模板](assets/project.json) |
 | 当前路线缺工具、会话连接或目标适配 | [环境管理](references/environment.md) |
+| 发现便携工具、建立工具清单文档或刷新工具状态 | [工具清单](references/tool-inventory.md)，JSON 为数据源，Markdown 由其生成 |
 
 按触发场景读取规则。日常会话先看当前工作集，再读取所选路线的依赖、条件与证据；阶段交接/完成仍须按审计规则覆盖全部历史路线。
+
+单人工作沿用下面的闭环。团队工作由执行者在独立工作区保存计划、原始产物和运行事实，由指定整合者核对、归档、封存并更新权威记录；编排插件管理成员、任务和交付，不替代本 skill 的证据与验收规则。具体写入归属和交接条件见团队协作规则。
 
 ## 每轮闭环
 
@@ -40,7 +44,7 @@ description: 适用于建立或接管逆向项目的工程管理、维护 INDEX 
 
 ## 辅助命令
 
-在分析仓库使用项目副本；以下是一次已有运行结束后的维护顺序，RUN-id 换成实际 ID：
+在分析仓库使用项目副本；以下由单人执行者或团队整合者在核对并归档运行后执行，RUN-id 换成实际 ID。团队执行者先按交付契约提交，不各自刷新全项目记录：
 
 ```text
 python .agents/skills/reverse-project-management/scripts/project.py seal . <RUN-id>
