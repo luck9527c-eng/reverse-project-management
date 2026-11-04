@@ -1,6 +1,6 @@
 # 团队协作与编排交接
 
-多 agent 并行时读取。编排由 **dsh-redteam-plugin** 提供：模式 id `redteam-lead`（红队指挥）。该插件**不注册任何工具**，只用两件事约束位置——Lead 拿不到 `workflow` / `subagent` / `subagent_fork`（自执行与派发入口被拒，并从它的工具目录里摘除），工兵拿不到 `spawn_teammate` / `subagent` / `subagent_fork` / `workflow`（无建人与派发权）。成员、消息与任务板是宿主 Agent Teams 的原生能力：`spawn_teammate`、`send_message`、`team_task_*`、`list_agents`、`wait_agent`。单人工作不需要启用团队，沿用同一套职责分工即可。
+多 agent 并行时读取。编排由 **[dsh-redteam-plugin](https://github.com/luck9527c-eng/dsh-redteam-plugin)** 提供：模式 id `redteam-lead`（红队指挥）。该插件**不注册任何工具**，只用两件事约束位置——Lead 拿不到 `workflow` / `subagent` / `subagent_fork`（自执行与派发入口被拒，并从它的工具目录里摘除），工兵拿不到 `spawn_teammate` / `subagent` / `subagent_fork` / `workflow`（无建人与派发权）。成员、消息与任务板是宿主 Agent Teams 的原生能力：`spawn_teammate`、`send_message`、`team_task_*`、`list_agents`、`wait_agent`。单人工作不需要启用团队，沿用同一套职责分工即可。
 
 ## 职责与权威记录
 
