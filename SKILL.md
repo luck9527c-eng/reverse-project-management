@@ -44,7 +44,7 @@ description: 适用于建立或接管逆向项目、维护 INDEX 与证据和路
 
 ## 辅助命令
 
-在分析仓库使用项目副本；单人工作时由该 agent 执行。团队模式下 Lead 没有执行通道（角色闸把 shell 从它的工具面里摘掉了），把下面四条命令派给一名工兵按原样执行（只跑命令、不改判断），输出交回 Lead 核对。RUN-id 换成实际 ID；工兵先按交付契约提交，不各自刷新全项目记录：
+在分析仓库使用项目副本；以下由单人工作时的 agent，或团队的 Lead 在核对并归档运行后执行，RUN-id 换成实际 ID。工兵先按交付契约提交，不各自刷新全项目记录：
 
 ```text
 python .agents/skills/reverse-project-management/scripts/project.py seal . <RUN-id>
